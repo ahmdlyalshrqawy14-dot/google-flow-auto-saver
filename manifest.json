@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Google Flow Auto Saver",
+  "version": "1.0.0",
+  "description": "أداة لأتمتة إرسال البرومبتات واستخراج الصور وتسميتها حسب الرقم وتنزيلها مضغوطة",
+  "permissions": [
+    "activeTab",
+    "downloads",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*.google.com/*",
+    "https://*.withgoogle.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Google Flow Auto Saver"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.google.com/*",
+        "https://*.withgoogle.com/*"
+      ],
+      "js": [
+        "jszip.min.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
