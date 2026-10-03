@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>Google Flow Auto Saver</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h2>Google Flow Auto Saver</h2>
+
+    <!-- تبويب اختيار المود -->
+    <div class="mode-selector">
+      <button id="tabAuto" class="tab-btn active">الأتمتة الكاملة</button>
+      <button id="tabScan" class="tab-btn">فحص الصور المعروضة</button>
+    </div>
+
+    <!-- لوحة المود الأول: الأتمتة الكاملة -->
+    <div id="panelAuto" class="panel active">
+      <label for="promptsInput">أدخل البرومبتات (افصل بين كل برومبت بسطر فارغ):</label>
+      <textarea id="promptsInput" placeholder="اصنع صورة رقم 1 وتفاصيلها...&#10;&#10;اصنع صورة رقم 2 وتفاصيلها..."></textarea>
+
+      <div class="options-group">
+        <label for="delayInput">المهلة بين البرومبتات (ثوانٍ):</label>
+        <input type="number" id="delayInput" value="5" min="2" max="60">
+      </div>
+
+      <div class="btn-group">
+        <button id="btnStartAuto" class="btn btn-primary">بدء التوليد المتسلسل</button>
+        <button id="btnStopAuto" class="btn btn-danger" disabled>إيقاف</button>
+      </div>
+    </div>
+
+    <!-- لوحة المود الثاني: الفحص المباشر -->
+    <div id="panelScan" class="panel">
+      <p class="description">قم بتوليد الصور على الشاشة يدوياً، ثم اضغط على الزر أدناه لقراءة أرقام البرومبتات وتسمية الصور وتجميعها في ملف ZIP فوراً.</p>
+      <button id="btnScanPage" class="btn btn-success">فحص الصفحة وتنزيل ZIP</button>
+    </div>
+
+    <!-- صندوق متابعة حالة التنفيذ -->
+    <div class="status-box">
+      <div class="status-header">
+        <span id="statusText">الحالة: خامل</span>
+        <span id="counterText">0 / 0</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div id="progressBar" class="progress-bar-fill"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
