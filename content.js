@@ -1,25 +1,70 @@
-// متغيرات التحكم بالعملية
+// ==========================================
+// 1. ذاكرة التقاط الصور من الشبكة والمؤشرات
+// ==========================================
+const networkCapturedImages = new Map();
 let isRunning = false;
 let isStopped = false;
 
-// 1. استخراج رقم الصورة من البرومبت باستخدام Regex
+// حقن سكريبت اعتراض طلبات fetch في بيئة الصفحة الرئيسية
+function injectNetworkInterceptor() {
+  const script = document.createElement('script');
+  script.textContent = `
+    (function() {
+      const originalFetch = window.fetch;
+      window.fetch = async function(...args) {
+        const response = await originalFetch.apply(this, args);
+        try {
+          const clone = response.clone();
+          const contentType = clone.headers.get('content-type') || '';
+          if (contentType.includes('application/json') || contentType.includes('text/plain')) {
+            clone.text().then(text => {
+              const imgUrls = text.match(/https:\/\/[^"]+\.(?:png|jpg|jpeg|webp)[^"]*/g) || [];
+              imgUrls.forEach(url => {
+                window.postMessage({ type: 'FLOW_IMAGE_CAPTURED', url: url }, '*');
+              });
+            });
+          }
+        } catch(e) {}
+        return response;
+      };
+    })();
+  `;
+  (document.head || document.documentElement).appendChild(script);
+  script.remove();
+}
+
+// تشغيل الاعتراض فور تحميل الصفحة
+injectNetworkInterceptor();
+
+// الاستماع للصور الملتقطة عبر postMessage
+window.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'FLOW_IMAGE_CAPTURED') {
+    const url = event.data.url;
+    if (!networkCapturedImages.has(url)) {
+      const nextIndex = networkCapturedImages.size + 1;
+      networkCapturedImages.set(url, { src: url, index: nextIndex });
+      console.log(`[Google Flow Auto Saver] تم التقاط صورة من المصدر: ${url}`);
+    }
+  }
+});
+
+// ==========================================
+// 2. الدوال المساعدة (Helper Functions)
+// ==========================================
+
+// استخراج رقم الصورة من البرومبت باستخدام Regex
 function extractImageNumber(promptText, fallbackIndex) {
   if (!promptText) return String(fallbackIndex);
-
-  // يبحث عن الأرقام المقترنة بكلمات مثل: صورة رقم 24، صوره 24، Image 24، #24، أو الرقم المتواجد بالنص
   const match = promptText.match(/(?:صورة|صوره|image)?\s*(?:رقم|#)?\s*(\d+)/i);
-  if (match && match[1]) {
-    return match[1];
-  }
-  return String(fallbackIndex);
+  return (match && match[1]) ? match[1] : String(fallbackIndex);
 }
 
-// 2. دالة الانتظار الزمنية
+// دالة الانتظار
 function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// 3. تحديث الحالة وإرسالها للواجهة Popup
+// إرسال تحديثات الحالة للـ Popup
 function notifyStatus(statusText, current, total, completed = false) {
   chrome.runtime.sendMessage({
     type: 'STATUS_UPDATE',
@@ -30,18 +75,16 @@ function notifyStatus(statusText, current, total, completed = false) {
   });
 }
 
-// 4. كتابة النص في خانة البرومبت ومحاكاة الأحداث
+// كتابة النص في خانة البرومبت وتفعيل الأحداث
 function setInputValue(inputElement, text) {
   inputElement.value = text;
   inputElement.dispatchEvent(new Event('input', { bubbles: true }));
   inputElement.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-// 5. البحث عن خانة الإدخال وزر التوليد
+// البحث عن عناصر الإدخال وزر التوليد داخل الواجهة
 function getFlowElements() {
   const input = document.querySelector('textarea, [contenteditable="true"], input[type="text"]');
-  
-  // البحث عن زر التوليد بأكثر من دالة استهداف
   const buttons = Array.from(document.querySelectorAll('button'));
   const generateBtn = buttons.find(b => {
     const txt = b.innerText || b.getAttribute('aria-label') || '';
@@ -51,12 +94,11 @@ function getFlowElements() {
   return { input, generateBtn };
 }
 
-// 6. الانتظار حتى اكتمال ظهور الصورة الجديدة
+// الانتظار حتى ظهور صورة جديدة في DOM الصفحة
 async function waitForNewImage(previousCount, timeoutSeconds = 60) {
   const startTime = Date.now();
   while (Date.now() - startTime < timeoutSeconds * 1000) {
     if (isStopped) return null;
-
     const images = document.querySelectorAll('img');
     if (images.length > previousCount) {
       const latestImg = images[images.length - 1];
@@ -69,7 +111,7 @@ async function waitForNewImage(previousCount, timeoutSeconds = 60) {
   return null;
 }
 
-// 7. تحويل رابط الصورة إلى Blob
+// جلب الصورة كـ Blob
 async function fetchImageBlob(url) {
   try {
     const response = await fetch(url);
@@ -80,7 +122,7 @@ async function fetchImageBlob(url) {
   }
 }
 
-// 8. تنزيل ملف الـ ZIP مباشرة
+// تنزيل ملف ZIP
 function downloadZip(zip, filename = 'google_flow_images.zip') {
   zip.generateAsync({ type: 'blob' }).then((content) => {
     const a = document.createElement('a');
@@ -92,7 +134,9 @@ function downloadZip(zip, filename = 'google_flow_images.zip') {
   });
 }
 
-// --- تنفيذ المود الأول: الأتمتة الكاملة ---
+// ==========================================
+// 3. المود الأول: الأتمتة الكاملة (Auto Mode)
+// ==========================================
 async function startAutoGeneration(prompts, delayTimeSec) {
   if (isRunning) return;
   isRunning = true;
@@ -103,7 +147,7 @@ async function startAutoGeneration(prompts, delayTimeSec) {
 
   for (let i = 0; i < total; i++) {
     if (isStopped) {
-      notifyStatus('تم إيقاف العملية', i, total, true);
+      notifyStatus('تم إيقاف العملية بواسطة المستخدم', i, total, true);
       isRunning = false;
       return;
     }
@@ -112,90 +156,99 @@ async function startAutoGeneration(prompts, delayTimeSec) {
     const imgNumber = extractImageNumber(currentPrompt, i + 1);
     const fileName = `${imgNumber}.png`;
 
-    notifyStatus(`جاري إرسال البرومبت رقم (${imgNumber})...`, i + 1, total);
+    notifyStatus(`جاري إرسال البرومبت (${imgNumber})...`, i + 1, total);
 
     const { input, generateBtn } = getFlowElements();
     if (!input || !generateBtn) {
-      notifyStatus('لم يتم العثور على عناصر الإدخال في الصفحة!', i, total, true);
+      notifyStatus('لم يتم العثور على خانة الإدخال في الصفحة!', i, total, true);
       isRunning = false;
       return;
     }
 
     const initialImgCount = document.querySelectorAll('img').length;
 
-    // إدخال النص وضغط الزر
+    // كتابة البرومبت والنقر
     setInputValue(input, currentPrompt);
     await delay(500);
     generateBtn.click();
 
-    notifyStatus(`جاري انتظار توليد الصورة (${imgNumber}.png)...`, i + 1, total);
+    notifyStatus(`جاري انتظار توليد صورة (${fileName})...`, i + 1, total);
 
-    // انتظار الصورة
+    // انتظار الصورة الجديدة
     const imageUrl = await waitForNewImage(initialImgCount, 90);
 
     if (imageUrl) {
       const blob = await fetchImageBlob(imageUrl);
       if (blob) {
         zip.file(fileName, blob);
-        notifyStatus(`تمت إضافة ${fileName} بنجاح`, i + 1, total);
+        notifyStatus(`تمت إضافة ${fileName} بنجاح للـ ZIP`, i + 1, total);
       } else {
-        notifyStatus(`فشل تنزيل صورة ${fileName}`, i + 1, total);
+        notifyStatus(`فشل تحميل صورة ${fileName}`, i + 1, total);
       }
     } else {
-      notifyStatus(`تجاوز الوقت المحدد لصورة ${fileName}`, i + 1, total);
+      notifyStatus(`تجاوز الوقت المحدد للبرومبت ${fileName}`, i + 1, total);
     }
 
-    // مهلة الأمان المحددة من الواجهة
+    // مهلة الأمان بين البرومبتات
     if (i < total - 1 && !isStopped) {
-      notifyStatus(`مهلة أمان (${delayTimeSec} ثوانٍ)...`, i + 1, total);
+      notifyStatus(`انتظار مهلة أمان (${delayTimeSec} ثوانٍ)...`, i + 1, total);
       await delay(delayTimeSec * 1000);
     }
   }
 
-  // تنزيل المجلد بعد الانتهاء
-  notifyStatus('جاري تجميع وتنفيذ تنزيل ملف ZIP...', total, total);
+  notifyStatus('جاري ضغط وتجميع ملف ZIP...', total, total);
   downloadZip(zip, 'google_flow_auto_images.zip');
-  notifyStatus('اكتملت جميع العمليات بنجاح!', total, total, true);
+  notifyStatus('اكتملت جميع البرومبتات وتنزيل الملف بنجاح!', total, total, true);
 
   isRunning = false;
 }
 
-// --- تنفيذ المود الثاني: فحص الصور المعروضة على الشاشة ---
+// ==========================================
+// 4. المود الثاني: فحص المصدر المباشر (Scan Mode)
+// ==========================================
 async function scanPageAndDownload() {
   const zip = new JSZip();
-  const images = Array.from(document.querySelectorAll('img')).filter(img => 
-    img.src.startsWith('http') && img.naturalWidth > 100
-  );
+  let items = Array.from(networkCapturedImages.values());
 
-  if (images.length === 0) {
-    notifyStatus('لم يتم العثور على صور صالحة في الصفحة', 0, 0, true);
+  // إذا لم يتم التقاط صور عبر الشبكة، يتم فحص عناصر img الموجودة في DOM كبديل
+  if (items.length === 0) {
+    const domImages = Array.from(document.querySelectorAll('img')).filter(img => 
+      img.src.startsWith('http') && (img.naturalWidth > 150 || img.clientWidth > 150)
+    );
+
+    domImages.forEach((img, idx) => {
+      const parent = img.closest('div') || img.parentElement;
+      const promptText = parent ? parent.innerText : '';
+      const imgNum = extractImageNumber(promptText, idx + 1);
+      items.push({ src: img.src, index: imgNum });
+    });
+  }
+
+  if (items.length === 0) {
+    notifyStatus('لم يتم العثور على أي صور صالحة في الصفحة أو الذاكرة', 0, 0, true);
     return;
   }
 
-  notifyStatus(`تم العثور على ${images.length} صورة. جاري التجميع...`, 0, images.length);
+  notifyStatus(`تم العثور على ${items.length} صورة. جاري الضغط...`, 0, items.length);
 
-  for (let i = 0; i < images.length; i++) {
-    const img = images[i];
-    
-    // محاولة قراءة النص القريب من الصورة لمعرفة الرقم
-    const parentContainer = img.closest('div') || img.parentElement;
-    const promptText = parentContainer ? parentContainer.innerText : '';
-    
-    const imgNumber = extractImageNumber(promptText, i + 1);
-    const fileName = `${imgNumber}.png`;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const fileName = `${item.index}.png`;
 
-    const blob = await fetchImageBlob(img.src);
+    const blob = await fetchImageBlob(item.src);
     if (blob) {
       zip.file(fileName, blob);
     }
-    notifyStatus(`تم تجهيز الصورة ${i + 1}/${images.length} (${fileName})`, i + 1, images.length);
+    notifyStatus(`تم تجهيز الصورة ${i + 1}/${items.length} (${fileName})`, i + 1, items.length);
   }
 
   downloadZip(zip, 'scanned_images.zip');
-  notifyStatus('تم تنزيل جميع الصور في ملف ZIP بنجاح!', images.length, images.length, true);
+  notifyStatus(`تم تنزيل ${items.length} صورة في ملف ZIP بنجاح!`, items.length, items.length, true);
 }
 
-// الاستماع للرسائل القادمة من popup.js
+// ==========================================
+// 5. الاستماع لرسائل الـ Popup
+// ==========================================
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'START_AUTO') {
     startAutoGeneration(request.prompts, request.delay);
