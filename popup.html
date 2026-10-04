@@ -2,49 +2,177 @@
 <html dir="rtl" lang="ar">
 <head>
   <meta charset="UTF-8">
-  <title>Google Flow Auto Saver</title>
+  <title>Google Flow Auto Saver Pro</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <div class="container">
-    <h2>Google Flow Auto Saver</h2>
+    <!-- Header -->
+    <header class="header">
+      <div class="header-title">
+        <h1>Google Flow Auto Saver Pro</h1>
+        <span class="badge">v2.0 Pro</span>
+      </div>
+      <div id="connectionStatus" class="status-indicator ready" title="حالة الاتصال">جاهز</div>
+    </header>
 
-    <!-- تبويب اختيار المود -->
-    <div class="mode-selector">
-      <button id="tabAuto" class="tab-btn active">الأتمتة الكاملة</button>
-      <button id="tabScan" class="tab-btn">فحص الصور المعروضة</button>
-    </div>
+    <!-- Navigation Tabs -->
+    <nav class="mode-selector">
+      <button id="tabPrompts" class="tab-btn active">
+        <span class="icon">📝</span> البرومبتات والبوتات
+      </button>
+      <button id="tabMonitor" class="tab-btn">
+        <span class="icon">📊</span> المتابعة والتحكم
+      </button>
+      <button id="tabScan" class="tab-btn">
+        <span class="icon">🔍</span> الفحص المباشر
+      </button>
+      <button id="tabSettings" class="tab-btn">
+        <span class="icon">⚙️</span> الإعدادات
+      </button>
+    </nav>
 
-    <!-- لوحة المود الأول: الأتمتة الكاملة -->
-    <div id="panelAuto" class="panel active">
-      <label for="promptsInput">أدخل البرومبتات (افصل بين كل برومبت بسطر فارغ):</label>
-      <textarea id="promptsInput" placeholder="اصنع صورة رقم 1 وتفاصيلها...&#10;&#10;اصنع صورة رقم 2 وتفاصيلها..."></textarea>
-
-      <div class="options-group">
-        <label for="delayInput">المهلة بين البرومبتات (ثوانٍ):</label>
-        <input type="number" id="delayInput" value="5" min="2" max="60">
+    <!-- Panel 1: Prompts & Bot Profiles -->
+    <div id="panelPrompts" class="panel active">
+      <!-- Bot Profile Selector & Actions -->
+      <div class="card">
+        <div class="card-header">
+          <h3>🤖 البوتات وقوالب البرومبتات</h3>
+          <button id="btnNewBot" class="btn btn-sm btn-outline">+ بوت جديد</button>
+        </div>
+        <div class="bot-selector-row">
+          <select id="botSelect">
+            <option value="default">الافتراضي (توليد الصور المباشر)</option>
+          </select>
+          <button id="btnSaveBot" class="btn btn-sm btn-secondary" title="حفظ البرومبتات الحالية في البوت المحدد">حفظ</button>
+          <button id="btnDeleteBot" class="btn btn-sm btn-danger-outline" title="حذف البوت المحدد">حذف</button>
+        </div>
       </div>
 
+      <!-- Prompts Input & Import/Export -->
+      <div class="card">
+        <div class="card-header">
+          <label for="promptsInput"><strong>قائمة البرومبتات (افصل بسطر فارغ):</strong></label>
+          <span id="promptCountBadge" class="count-badge">0 برومبت</span>
+        </div>
+        <textarea id="promptsInput" placeholder="اصنع صورة رقم 1 وتفاصيلها...&#10;&#10;اصنع صورة رقم 2 وتفاصيلها..."></textarea>
+
+        <div class="file-actions">
+          <input type="file" id="fileImport" accept=".txt,.json,.csv" style="display: none;">
+          <button id="btnImport" class="btn btn-sm btn-secondary">📥 استيراد (TXT/CSV/JSON)</button>
+          <button id="btnExport" class="btn btn-sm btn-secondary">📤 تصدير القائمة</button>
+          <button id="btnClearPrompts" class="btn btn-sm btn-outline-danger">مسح النص</button>
+        </div>
+      </div>
+
+      <!-- Main Trigger -->
+      <button id="btnStartAuto" class="btn btn-primary btn-block btn-lg">🚀 بدء التوليد الأوتوماتيكي</button>
+    </div>
+
+    <!-- Panel 2: Live Monitor & Controls -->
+    <div id="panelMonitor" class="panel">
+      <!-- Execution Status Card -->
+      <div class="card">
+        <div class="status-header">
+          <span id="statusText">الحالة: خامل</span>
+          <span id="counterText">0 / 0</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div id="progressBar" class="progress-bar-fill"></div>
+        </div>
+        <div class="stats-row">
+          <div>الوقت المنقضي: <strong id="elapsedTime">00:00</strong></div>
+          <div>المكتمل: <strong id="successCount">0</strong></div>
+          <div>الأخطاء/إعادة المحاولة: <strong id="failedCount">0</strong></div>
+        </div>
+      </div>
+
+      <!-- Live Controls -->
       <div class="btn-group">
-        <button id="btnStartAuto" class="btn btn-primary">بدء التوليد المتسلسل</button>
-        <button id="btnStopAuto" class="btn btn-danger" disabled>إيقاف</button>
+        <button id="btnPauseAuto" class="btn btn-warning" disabled>⏸️ إيقاف مؤقت</button>
+        <button id="btnResumeAuto" class="btn btn-success" disabled style="display: none;">▶️ استئناف</button>
+        <button id="btnStopAuto" class="btn btn-danger" disabled>⏹️ إيقاف كلي</button>
+      </div>
+
+      <!-- Live Log Table -->
+      <div class="card log-card">
+        <div class="card-header">
+          <h3>📜 سجل التنفيذ المباشر</h3>
+          <button id="btnClearLog" class="btn btn-xs btn-outline">مسح السجل</button>
+        </div>
+        <div class="log-container">
+          <table id="logTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>البرومبت / الملف</th>
+                <th>الحالة</th>
+                <th>الوقت</th>
+              </tr>
+            </thead>
+            <tbody id="logTableBody">
+              <tr class="empty-row"><td colspan="4">لا توجد عمليات جارية حالياً</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
-    <!-- لوحة المود الثاني: الفحص المباشر -->
+    <!-- Panel 3: Direct Scan Mode -->
     <div id="panelScan" class="panel">
-      <p class="description">قم بتوليد الصور على الشاشة يدوياً، ثم اضغط على الزر أدناه لقراءة أرقام البرومبتات وتسمية الصور وتجميعها في ملف ZIP فوراً.</p>
-      <button id="btnScanPage" class="btn btn-success">فحص الصفحة وتنزيل ZIP</button>
+      <div class="card">
+        <div class="description">
+          <p>💡 <strong>فحص الصفحة المباشر:</strong> قم بتوليد الصور على الشاشة يدوياً أو اختر صفحة معروضة، ثم اضغط أدناه لقراءة أرقام البرومبتات وتجميع كافة الصور في ملف ZIP فوراً.</p>
+        </div>
+        <button id="btnScanPage" class="btn btn-success btn-block btn-lg">🔍 فحص الصور المعروضة وتنزيل ZIP</button>
+      </div>
     </div>
 
-    <!-- صندوق متابعة حالة التنفيذ -->
-    <div class="status-box">
-      <div class="status-header">
-        <span id="statusText">الحالة: خامل</span>
-        <span id="counterText">0 / 0</span>
-      </div>
-      <div class="progress-bar-bg">
-        <div id="progressBar" class="progress-bar-fill"></div>
+    <!-- Panel 4: Settings -->
+    <div id="panelSettings" class="panel">
+      <div class="card">
+        <h3>⚙️ إعدادات التوليد والأمان</h3>
+
+        <div class="setting-item">
+          <label for="delayInput">المهلة بين البرومبتات (ثوانٍ):</label>
+          <input type="number" id="delayInput" value="5" min="2" max="120">
+        </div>
+
+        <div class="setting-item">
+          <label for="randomDelayInput">تفاوت عشوائي (+/- ثوانٍ):</label>
+          <input type="number" id="randomDelayInput" value="2" min="0" max="30">
+        </div>
+
+        <div class="setting-item">
+          <label for="timeoutInput">أقصى انتظار للصورة (ثانية):</label>
+          <input type="number" id="timeoutInput" value="90" min="10" max="300">
+        </div>
+
+        <div class="setting-item">
+          <label for="maxRetriesInput">عدد إعادات المحاولة عند الفشل:</label>
+          <input type="number" id="maxRetriesInput" value="2" min="0" max="5">
+        </div>
+
+        <div class="setting-item">
+          <label for="namingPatternSelect">صيغة تسمية الصور:</label>
+          <select id="namingPatternSelect">
+            <option value="number">الرقم فقط (مثل 1.png)</option>
+            <option value="number_prompt">الرقم + بداية البرومبت</option>
+            <option value="timestamp">الرقم + الوقت والتاريخ</option>
+          </select>
+        </div>
+
+        <div class="setting-item check-item">
+          <input type="checkbox" id="checkNotify" checked>
+          <label for="checkNotify">إرسال إشعار عند اكتمال الدفعة</label>
+        </div>
+
+        <div class="setting-item check-item">
+          <input type="checkbox" id="checkAutoDownload" checked>
+          <label for="checkAutoDownload">تنزيل ملف ZIP تلقائياً بعد النهاية</label>
+        </div>
+
+        <button id="btnSaveSettings" class="btn btn-primary btn-block" style="margin-top: 10px;">💾 حفظ الإعدادات</button>
       </div>
     </div>
   </div>

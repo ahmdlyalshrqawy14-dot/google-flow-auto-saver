@@ -6,7 +6,9 @@
   "permissions": [
     "activeTab",
     "downloads",
-    "scripting"
+    "scripting",
+    "storage",
+    "notifications"
   ],
   "host_permissions": [
     "https://*.google.com/*",
