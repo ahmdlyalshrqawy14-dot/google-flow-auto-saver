@@ -77,37 +77,77 @@ function notifyStatus(statusText, current, total, completed = false) {
 
 // كتابة النص في خانة البرومبت وتفعيل الأحداث
 function setInputValue(inputElement, text) {
-  inputElement.value = text;
-  inputElement.dispatchEvent(new Event('input', { bubbles: true }));
-  inputElement.dispatchEvent(new Event('change', { bubbles: true }));
+  if (!inputElement) return;
+
+  inputElement.focus();
+  const isEditable = inputElement.isContentEditable ||
+                     inputElement.getAttribute('contenteditable') === 'true' ||
+                     inputElement.getAttribute('contenteditable') === '';
+
+  if (isEditable) {
+    inputElement.innerText = text;
+    inputElement.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: text }));
+  } else {
+    inputElement.value = text;
+    inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+    inputElement.dispatchEvent(new Event('change', { bubbles: true }));
+  }
 }
 
 // البحث عن عناصر الإدخال وزر التوليد داخل الواجهة
 function getFlowElements() {
-  const input = document.querySelector('textarea, [contenteditable="true"], input[type="text"]');
-  const buttons = Array.from(document.querySelectorAll('button'));
+  const input = document.querySelector('textarea, [contenteditable="true"], [contenteditable=""], [contenteditable], input[type="text"]');
+  const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
   const generateBtn = buttons.find(b => {
-    const txt = b.innerText || b.getAttribute('aria-label') || '';
-    return /generate|توليد|إرسال|send|create/i.test(txt);
+    const txt = (b.innerText || b.getAttribute('aria-label') || b.getAttribute('title') || '').trim();
+    return /generate|توليد|إرسال|send|create|run|submit|أرسل/i.test(txt);
   }) || buttons[buttons.length - 1];
 
   return { input, generateBtn };
 }
 
-// الانتظار حتى ظهور صورة جديدة في DOM الصفحة
-async function waitForNewImage(previousCount, timeoutSeconds = 60) {
+// الانتظار حتى ظهور صورة جديدة في DOM الصفحة أو التقاطها عبر الشبكة
+async function waitForNewImage(previousCapturedCount, timeoutSeconds = 60) {
   const startTime = Date.now();
+  const initialDomImages = Array.from(document.querySelectorAll('img'))
+    .filter(img => img.src.startsWith('http') && (img.naturalWidth > 150 || img.clientWidth > 150))
+    .map(img => img.src);
+
   while (Date.now() - startTime < timeoutSeconds * 1000) {
     if (isStopped) return null;
-    const images = document.querySelectorAll('img');
-    if (images.length > previousCount) {
-      const latestImg = images[images.length - 1];
-      if (latestImg.complete && latestImg.naturalWidth > 0 && latestImg.src.startsWith('http')) {
-        return latestImg.src;
+
+    // 1. تحقق من ذاكرة التقاط الشبكة أولاً
+    const captured = Array.from(networkCapturedImages.values());
+    if (captured.length > previousCapturedCount) {
+      const latestCaptured = captured[captured.length - 1];
+      if (latestCaptured && latestCaptured.src) {
+        return latestCaptured.src;
       }
     }
+
+    // 2. تحقق من عناصر الصورة في DOM
+    const currentDomImages = Array.from(document.querySelectorAll('img')).filter(img =>
+      img.src.startsWith('http') &&
+      !img.src.includes('avatar') &&
+      !img.src.includes('profile') &&
+      !img.src.includes('icon') &&
+      (img.naturalWidth > 150 || img.clientWidth > 150 || img.naturalHeight > 150 || img.clientHeight > 150)
+    );
+
+    const newDomImg = currentDomImages.find(img => !initialDomImages.includes(img.src));
+    if (newDomImg && newDomImg.complete) {
+      return newDomImg.src;
+    }
+
     await delay(1000);
   }
+
+  // محاولة أخيرة: إرجاع آخر صورة ملتقطة إذا وجدت
+  const finalCaptured = Array.from(networkCapturedImages.values());
+  if (finalCaptured.length > previousCapturedCount) {
+    return finalCaptured[finalCaptured.length - 1].src;
+  }
+
   return null;
 }
 
@@ -165,7 +205,7 @@ async function startAutoGeneration(prompts, delayTimeSec) {
       return;
     }
 
-    const initialImgCount = document.querySelectorAll('img').length;
+    const initialCapturedCount = networkCapturedImages.size;
 
     // كتابة البرومبت والنقر
     setInputValue(input, currentPrompt);
@@ -175,7 +215,7 @@ async function startAutoGeneration(prompts, delayTimeSec) {
     notifyStatus(`جاري انتظار توليد صورة (${fileName})...`, i + 1, total);
 
     // انتظار الصورة الجديدة
-    const imageUrl = await waitForNewImage(initialImgCount, 90);
+    const imageUrl = await waitForNewImage(initialCapturedCount, 90);
 
     if (imageUrl) {
       const blob = await fetchImageBlob(imageUrl);
@@ -213,13 +253,17 @@ async function scanPageAndDownload() {
   // إذا لم يتم التقاط صور عبر الشبكة، يتم فحص عناصر img الموجودة في DOM كبديل
   if (items.length === 0) {
     const domImages = Array.from(document.querySelectorAll('img')).filter(img => 
-      img.src.startsWith('http') && (img.naturalWidth > 150 || img.clientWidth > 150)
+      img.src.startsWith('http') &&
+      !img.src.includes('avatar') &&
+      !img.src.includes('profile') &&
+      !img.src.includes('icon') &&
+      (img.naturalWidth > 150 || img.clientWidth > 150 || img.naturalHeight > 150 || img.clientHeight > 150)
     );
 
     domImages.forEach((img, idx) => {
-      const parent = img.closest('div') || img.parentElement;
-      const promptText = parent ? parent.innerText : '';
-      const imgNum = extractImageNumber(promptText, idx + 1);
+      let promptContainer = img.closest('div, section, article, [role="region"]') || img.parentElement;
+      let promptText = promptContainer ? promptContainer.innerText : '';
+      let imgNum = extractImageNumber(promptText, idx + 1);
       items.push({ src: img.src, index: imgNum });
     });
   }
